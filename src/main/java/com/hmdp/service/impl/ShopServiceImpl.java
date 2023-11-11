@@ -7,6 +7,7 @@ import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ import static com.hmdp.utils.RedisConstants.CACHE_SHOP_KEY;
  * @author 虎哥
  * @since 2021-12-22
  */
+@Slf4j
 @Service
 public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IShopService {
 
@@ -38,6 +40,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         if (StrUtil.isNotBlank(shopJson)) {
             // 3.存在直接返回
             Shop shop = JSONUtil.toBean(shopJson, Shop.class);
+            log.info("redis -> shop -> {}",shop);
             return Result.ok(shop);
         }
         // 4.不存在，根据id查询数据库
@@ -47,6 +50,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         }
         // 6.存在，写入redis
         redisTemplate.opsForValue().set(key,JSONUtil.toJsonStr(shop));
+        log.info("mysql -> shop -> {}",shop);
         return Result.ok(shop);
     }
 }

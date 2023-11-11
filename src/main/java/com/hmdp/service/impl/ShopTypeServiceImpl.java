@@ -48,6 +48,7 @@ public class ShopTypeServiceImpl extends ServiceImpl<ShopTypeMapper, ShopType> i
                     .map((s) -> JSONUtil.toBean(s, HashMap.class))
                     .map((map) -> BeanUtil.fillBeanWithMap(map, new ShopType(), false)
                     ).collect(Collectors.toList());
+            log.info("redis -> shopTypeList -> {}",shopTypeJson);
             return Result.ok(shopTypeList);
         }
         // 4.不存在，先查询数据库
@@ -59,7 +60,7 @@ public class ShopTypeServiceImpl extends ServiceImpl<ShopTypeMapper, ShopType> i
 
         // 6.存在，先存入redis中
         shopTypeJson = shopTypeList.stream().map(JSONUtil::toJsonStr).collect(Collectors.toList());
-        log.info("shopTypeList -> {}",shopTypeJson);
+        log.info("mysql -> shopTypeList -> {}",shopTypeJson);
         redisTemplate.opsForList().leftPushAll(CACHE_SHOP_TYPE_KEY,shopTypeJson);
         redisTemplate.expire(CACHE_SHOP_TYPE_KEY,CACHE_NULL_TTL, TimeUnit.HOURS);
         return Result.ok(shopTypeList);
