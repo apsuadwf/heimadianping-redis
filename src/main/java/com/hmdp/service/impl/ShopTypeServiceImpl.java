@@ -19,8 +19,7 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static com.hmdp.utils.RedisConstants.CACHE_NULL_TTL;
-import static com.hmdp.utils.RedisConstants.CACHE_SHOP_TYPE_KEY;
+import static com.hmdp.utils.RedisConstants.*;
 
 /**
  * <p>
@@ -61,8 +60,8 @@ public class ShopTypeServiceImpl extends ServiceImpl<ShopTypeMapper, ShopType> i
         // 6.存在，先存入redis中
         shopTypeJson = shopTypeList.stream().map(JSONUtil::toJsonStr).collect(Collectors.toList());
         log.info("mysql -> shopTypeList -> {}",shopTypeJson);
-        redisTemplate.opsForList().leftPushAll(CACHE_SHOP_TYPE_KEY,shopTypeJson);
-        redisTemplate.expire(CACHE_SHOP_TYPE_KEY,CACHE_NULL_TTL, TimeUnit.HOURS);
+        redisTemplate.opsForList().rightPushAll(CACHE_SHOP_TYPE_KEY,shopTypeJson);
+        redisTemplate.expire(CACHE_SHOP_TYPE_KEY,CACHE_SHOP_TYPE_TTL, TimeUnit.HOURS);
         return Result.ok(shopTypeList);
     }
 }
