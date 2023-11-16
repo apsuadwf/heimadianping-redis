@@ -8,6 +8,7 @@ import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.utils.CacheClient;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.jdbc.Null;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +39,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Autowired
     private StringRedisTemplate redisTemplate;
 
+    @Autowired
+    private CacheClient cacheClient;
     @Override
     public Result queryById(Long id) {
 
@@ -45,8 +48,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         // Shop shop = queryWithPassThrough(id);
 
         // 互斥锁解决缓存击穿
-        Shop shop = queryWithMutex(id);
-
+        // Shop shop = queryWithMutex(id);
+        // 缓存穿透
+        Shop shop = cacheClient.queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
         if (shop == null) {
             Result.fail("店铺数据不存在！");
         }
@@ -67,9 +71,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         // 2.判断是否存在
         if (StrUtil.isNotBlank(shopJson)) {
             // 3.存在直接返回
-            Shop shop = JSONUtil.toBean(shopJson, Shop.class);
-//            log.info("redis -> shop -> {}", shop);
-            return shop;
+            return JSONUtil.toBean(shopJson, Shop.class);
         }
         // 判断是否为缓存的空值
         if (shopJson != null) {
@@ -106,7 +108,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             if (StrUtil.isNotBlank(shopJsonAfterLock)) {
                 // 4.5. 存在直接返回
                 shop = JSONUtil.toBean(shopJsonAfterLock, Shop.class);
-                //log.info("redis -> shop (after lock) -> {}", shop);
+                //log.info("redis -> shop (after lock) -> {}", shop)
                 return shop;
             }
             // 判断是否为缓存的空值
