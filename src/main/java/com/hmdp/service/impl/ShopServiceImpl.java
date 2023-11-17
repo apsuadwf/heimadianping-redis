@@ -63,6 +63,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         Shop shop = queryWithLogicalExpire(id);
         // 缓存穿透
         //Shop shop = cacheClient.queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById, CACHE_SHOP_TTL, TimeUnit.MINUTES);
+        cacheClient.queryWithLogicalExpire(CACHE_SHOP_KEY,id,Shop.class,this::getById,CACHE_SHOP_TTL,TimeUnit.MINUTES);
         if (shop == null) {
             Result.fail("店铺数据不存在！");
         }
