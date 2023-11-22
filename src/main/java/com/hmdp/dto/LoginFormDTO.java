@@ -1,5 +1,6 @@
 package com.hmdp.dto;
 
+import lombok.Builder;
 import lombok.Data;
 
 /**
@@ -7,6 +8,7 @@ import lombok.Data;
  * @author XieRongji
  */
 @Data
+@Builder
 public class LoginFormDTO {
     private String phone;
     private String code;
