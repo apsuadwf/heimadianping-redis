@@ -1,9 +1,14 @@
 package com.hmdp.util;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.bean.copier.CopyOptions;
+import cn.hutool.core.lang.UUID;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
 import com.hmdp.dto.LoginFormDTO;
 import com.hmdp.dto.Result;
+import com.hmdp.dto.UserDTO;
+import com.hmdp.entity.User;
 import com.hmdp.service.impl.UserServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +21,8 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static com.hmdp.utils.RedisConstants.*;
@@ -37,14 +44,17 @@ public class LoginTest {
         URL resource = LoginTest.class.getClassLoader().getResource("tokens.txt");
         try (PrintWriter writer = new PrintWriter(new FileWriter(new File(resource.toURI())))) {
             for (int i = 0; i < 1000; i++) {
+
                 String phone = prefix + StrUtil.padPre(String.valueOf(i), 4, '0');
-                String code = RandomUtil.randomNumbers(6);
-                redisTemplate.opsForValue().set(LOGIN_CODE_KEY +phone,code,LOGIN_CODE_TTL, TimeUnit.MINUTES);
-                Result login = userService.login(LoginFormDTO.builder().phone(phone).code(code).build());
-                String token = (String)login.getData();
-                System.out.println(token);
+                String token = UUID.randomUUID().toString(true);
+                User user = userService.lambdaQuery().eq(User::getPhone, phone).one();
+                // 将User对象转换成HashMap存储
+                UserDTO userDTO = BeanUtil.copyProperties(user, UserDTO.class);
+                Map<String, Object> userMap = BeanUtil.beanToMap(userDTO,new HashMap<>(8),
+                        CopyOptions.create().setIgnoreNullValue(true).setFieldValueEditor((fieldName, fieldValue)->fieldValue.toString()));
+                // 存储
                 String tokenKey = LOGIN_USER_KEY + token;
-                redisTemplate.expire(tokenKey, LOGIN_USER_TTL, TimeUnit.DAYS);
+                redisTemplate.opsForHash().putAll(tokenKey,userMap);
                 // 将 token 写入文件
                 writer.println(token);
             }
