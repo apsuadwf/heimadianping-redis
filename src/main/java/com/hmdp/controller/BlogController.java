@@ -49,10 +49,8 @@ public class BlogController {
      * @return List<UserDTO>
      */
     @GetMapping("/likes/{id}")
-    public Result queryLikeBlog(@PathVariable("id") Long id) {
-        // 查询点赞数量
-        Blog blog = blogService.lambdaQuery().eq(Blog::getId, id).select(Blog::getLiked).one();
-        return Result.ok(blog);
+    public Result queryBlogLikes(@PathVariable("id") Long id) {
+        return blogService.queryBlogLikes(id);
     }
 
     @PutMapping("/like/{id}")
