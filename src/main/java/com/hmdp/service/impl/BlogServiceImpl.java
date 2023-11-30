@@ -96,15 +96,16 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
         Long userId = UserHolder.getUser().getId();
         String key = BLOG_LIKED_KEY + id;
         // 判断当前用户是否点赞
-        Boolean isMember = redisTemplate.opsForSet().isMember(key, userId.toString());
+        Double score = redisTemplate.opsForZSet().score(key, userId.toString());
         // 未点赞,可以点赞
         // 包装类与可能存在NPE
-        if (BooleanUtil.isFalse(isMember)){
+        if (score == null){
             // 数据库点赞数+1
             boolean isSuccess = lambdaUpdate().setSql("liked = liked + 1").eq(Blog::getId, id).update();
             // 保存用户到redis的set集合
             if (isSuccess){
-                redisTemplate.opsForSet().add(key,userId.toString());
+                // key value score
+                redisTemplate.opsForZSet().add(key,userId.toString(),System.currentTimeMillis());
             }
         }else{
             // 点过赞,取消点赞
@@ -112,7 +113,7 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
             boolean isSuccess = lambdaUpdate().setSql("liked = liked - 1").eq(Blog::getId, id).update();
             // 把用户从redis中set集合移除
             if (isSuccess) {
-                redisTemplate.opsForSet().remove(key, userId.toString());
+                redisTemplate.opsForZSet().remove(key, userId.toString());
             }
         }
         return Result.ok();
