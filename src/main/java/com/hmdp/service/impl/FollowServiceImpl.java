@@ -1,18 +1,26 @@
 package com.hmdp.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.util.BooleanUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.dto.Result;
 import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.Follow;
+import com.hmdp.entity.User;
 import com.hmdp.mapper.FollowMapper;
 import com.hmdp.service.IFollowService;
+import com.hmdp.service.IUserService;
 import com.hmdp.utils.UserHolder;
 import lombok.AllArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static com.hmdp.utils.RedisConstants.FOLLOWS_KEY;
 
@@ -29,6 +37,9 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow> impleme
 
     @Autowired
     private StringRedisTemplate redisTemplate;
+
+    @Autowired
+    private IUserService userService;
 
     @Override
     public Result follow(Long followUserId, Boolean isFollow) {
@@ -82,5 +93,26 @@ public class FollowServiceImpl extends ServiceImpl<FollowMapper, Follow> impleme
                 .eq(Follow::getFollowUserId, followUserId));
         // 判断
         return Result.ok(count > 0);
+    }
+
+    @Override
+    public Result getCommonFollowers(Long otherUserId) {
+        // 获取当前用户
+        Long userId = UserHolder.getUser().getId();
+        // 创建RedisKey
+        String myKey = FOLLOWS_KEY + userId;
+        String otherUserKey = FOLLOWS_KEY + otherUserId;
+        // 从Redis中查询两个用户关注交集
+        Set<String>  intersect= redisTemplate.opsForSet().intersect(myKey, otherUserKey);
+        if (intersect == null || intersect.isEmpty()){
+            // 交集为空,返回空集合
+            return Result.ok(Collections.emptyList());
+        }
+        // 不为空,通过stream流转换成UserDTOList返回
+        List<Long> intersectUserIdList = intersect.stream().map(Long::valueOf).collect(Collectors.toList());
+        List<UserDTO> userDTOList = listByIds(intersectUserIdList).stream()
+                .map(user -> BeanUtil.copyProperties(user,UserDTO.class))
+                .collect(Collectors.toList());
+        return Result.ok(userDTOList);
     }
 }
