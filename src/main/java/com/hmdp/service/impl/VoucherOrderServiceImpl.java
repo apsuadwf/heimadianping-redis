@@ -241,7 +241,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         proxy = (IVoucherOrderService) AopContext.currentProxy();
         // 2.6.放入阻塞对列
         orderTasks.add(voucherOrder);
-        // TODO 保存阻塞队列
+        // 保存阻塞队列
         // 3.返回订单id
         return Result.ok(orderId);
     }*/

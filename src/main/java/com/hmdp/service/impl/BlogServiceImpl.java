@@ -6,23 +6,29 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.constants.SystemConstants;
 import com.hmdp.dto.Result;
+import com.hmdp.dto.ScrollResult;
 import com.hmdp.dto.UserDTO;
 import com.hmdp.entity.Blog;
+import com.hmdp.entity.Follow;
 import com.hmdp.entity.User;
 import com.hmdp.mapper.BlogMapper;
 import com.hmdp.service.IBlogService;
+import com.hmdp.service.IFollowService;
 import com.hmdp.service.IUserService;
 import com.hmdp.utils.UserHolder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.hmdp.utils.RedisConstants.BLOG_LIKED_KEY;
+import static com.hmdp.utils.RedisConstants.FEED_KEY;
 
 /**
  * <p>
@@ -37,6 +43,9 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
 
     @Autowired
     private IUserService userService;
+
+    @Autowired
+    private IFollowService followService;
 
     @Autowired
     private StringRedisTemplate redisTemplate;
@@ -149,5 +158,71 @@ public class BlogServiceImpl extends ServiceImpl<BlogMapper, Blog> implements IB
                 .collect(Collectors.toList());
         // 返回
         return Result.ok(userDTOList);
+    }
+
+    @Override
+    public Result saveBlog(Blog blog) {
+        // 获取登录用户
+        UserDTO user = UserHolder.getUser();
+        blog.setUserId(user.getId());
+        // 保存探店博文
+        this.save(blog);
+        // 查询作者的所有粉丝
+        List<Follow> followList = followService.lambdaQuery().eq(Follow::getFollowUserId, user.getId()).list();
+        // 推送笔记id给所有粉丝
+        followList.forEach((follow -> {
+            // 获取粉丝ID
+            Long userId = follow.getUserId();
+            // 推送
+            String key = FEED_KEY + userId;
+            redisTemplate.opsForZSet().add(key, blog.getId().toString(), System.currentTimeMillis());
+        }));
+        // 返回id
+        return Result.ok(blog.getId());
+    }
+
+    @Override
+    public Result queryBlogOfFollow(Long max, Integer offset) {
+        // 获取当前用户
+        Long userId = UserHolder.getUser().getId();
+        // 查询收件箱 ZREVRANGEBYSCORE key Max Min WITHSCORES LIMIT Offset Count
+        String key = FEED_KEY + userId;
+        Set<ZSetOperations.TypedTuple<String>> typedTuples = redisTemplate.opsForZSet()
+                .reverseRangeByScoreWithScores(key, 0, max, offset, 2);
+        if (typedTuples == null || typedTuples.isEmpty()) {
+            return Result.ok();
+        }
+        // 解析数据:BlogId minTime(时间戳) offset
+        List<Long> blogIdList = new ArrayList<>(typedTuples.size());
+        long minTime = 0;
+        int os = 1;
+        for (ZSetOperations.TypedTuple<String> tuple : typedTuples) {
+            // 获取blogId
+            blogIdList.add(Long.valueOf(tuple.getValue()));
+            // 获取分数(事件戳)
+            long time = tuple.getScore().longValue();
+            if (time == minTime) {
+                os++;
+            } else {
+                minTime = time;
+                os = 1;
+            }
+        }
+        // 根据id查询blog
+        String idStr = StrUtil.join(",", blogIdList);
+        List<Blog> blogList = lambdaQuery().in(Blog::getId, blogIdList).last("ORDER BY FIELD(id," + idStr + ")")
+                .list().stream().peek(blog -> {
+                    // 查询blog有关的用户
+                    queryBlogUser(blog);
+                    // 查询blog是否被点赞
+                    isBlogLiked(blog);
+                }).collect(Collectors.toList());
+        System.out.println(blogList.size());
+        // 封装并返回
+        ScrollResult scrollResult = new ScrollResult();
+        scrollResult.setList(blogList);
+        scrollResult.setOffset(os);
+        scrollResult.setMinTime(minTime);
+        return Result.ok(scrollResult);
     }
 }

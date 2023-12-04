@@ -7,7 +7,7 @@ package com.hmdp.constants;
 public class SystemConstants {
     public static final String AUTHORIZATION = "Authorization";
 
-    public static final String IMAGE_UPLOAD_DIR = "D:\\lesson\\nginx-1.18.0\\html\\hmdp\\imgs\\";
+    public static final String IMAGE_UPLOAD_DIR = "D:\\Learn_Files\\Redis\\nginx-1.18.0\\html\\hmdp\\imgs";
     /**
      * 用户昵称前缀
      */
