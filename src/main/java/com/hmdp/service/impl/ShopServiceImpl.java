@@ -4,7 +4,9 @@ import cn.hutool.core.lang.TypeReference;
 import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.constants.SystemConstants;
 import com.hmdp.dto.Result;
 import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
@@ -13,12 +15,19 @@ import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisData;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.geo.Distance;
+import org.springframework.data.geo.GeoResult;
+import org.springframework.data.geo.GeoResults;
+import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.domain.geo.GeoReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.*;
 import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 import static com.hmdp.constants.SystemConstants.MAX_RETRY_COUNT;
 import static com.hmdp.utils.RedisConstants.*;
@@ -81,7 +90,8 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             return null;
         }
         // 4. 命中，需要先吧JSON反序列化为对象
-        RedisData<Shop> redisData = JSONUtil.toBean(shopJson, new TypeReference<RedisData<Shop>>() {}, false);
+        RedisData<Shop> redisData = JSONUtil.toBean(shopJson, new TypeReference<RedisData<Shop>>() {
+        }, false);
         Shop shop = redisData.getData();
         LocalDateTime expireTime = redisData.getExpireTime();
         // 5. 判断是否过期
@@ -100,9 +110,9 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             CACHE_REBUILD_EXECUTOR.submit(() -> {
                 try {
                     this.saveShop2Redis(id, LOCK_SHOP_TTL);
-                } catch (Exception e){
+                } catch (Exception e) {
                     throw new RuntimeException(e);
-                }finally {
+                } finally {
                     // 释放锁
                     releaseLock(lockKey);
                 }
@@ -275,5 +285,73 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         // 2.删除缓存
         redisTemplate.delete(CACHE_SHOP_KEY + id);
         return Result.ok();
+    }
+
+    @Override
+    public Result queryShopByType(Integer typeId, Integer current, Double x, Double y) {
+        // 判断是否需要根据坐标查询
+        if (x == null || y == null) {
+            // 不需要坐标查询,按数据库查询
+            // 根据类型分页查询
+            Page<Shop> page = lambdaQuery()
+                    .eq(Shop::getTypeId, typeId)
+                    .page(new Page<>(current, SystemConstants.DEFAULT_PAGE_SIZE));
+            // 返回数据
+            return Result.ok(page.getRecords());
+        }
+        // 计算分页参数
+        int from = (current - 1) * SystemConstants.DEFAULT_PAGE_SIZE;
+        int end = current * SystemConstants.DEFAULT_PAGE_SIZE;
+        String key = SHOP_GEO_KEY + typeId;
+        // 查询redis 按照距离排序 分页 结果:shopId distance
+        // GEOSEARCH BYLONLAT x y BYRADIUS 10 WITHDISTANCE
+        GeoResults<RedisGeoCommands.GeoLocation<String>> results = redisTemplate.opsForGeo()
+                .search(
+                        key,
+                        GeoReference.fromCoordinate(x, y),
+                        new Distance(5000),
+                        RedisGeoCommands.GeoSearchCommandArgs.newGeoSearchArgs()
+                                .includeDistance()
+                                .limit(end));
+        if (results == null) {
+            return Result.ok(Collections.emptyList());
+        }
+        List<GeoResult<RedisGeoCommands.GeoLocation<String>>> list = results.getContent();
+
+        // 已经到最后一页,跳过个数(from)超过数据个数,说明最后一页已经到底
+        if (from > list.size()) {
+            // 截取可能出现空的情况
+            return Result.ok("数据到底啦");
+        }
+
+        List<String> shopIdList = new ArrayList<>(list.size());
+        Map<String, Distance> distanceMap = new HashMap<>(list.size());
+        // 截取 from - end 部分
+        list.stream().skip(from).forEach(r -> {
+            // 获取店铺Id
+            String shopIdStr = r.getContent().getName();
+            shopIdList.add(shopIdStr);
+            // 获取距离
+            Distance distance = r.getDistance();
+            distanceMap.put(shopIdStr, distance);
+        });
+
+        // 截取可能出现空的情况
+//        if (shopIdList.size() < 1){
+//            return Result.ok("数据到底啦");
+//        }
+
+        // 根据id查询Shop
+        List<Shop> shopList = lambdaQuery()
+                .in(Shop::getId, shopIdList)
+                .list()
+                .stream()
+                // 按照idList的顺序排序结果
+                .sorted(Comparator.comparingLong(shop -> shopIdList.indexOf(shop.getId().toString())))
+                // 设置distance
+                .peek(shop -> shop.setDistance(distanceMap.get(shop.getId().toString()).getValue()))
+                .collect(Collectors.toList());
+        // 返回结果
+        return Result.ok(shopList);
     }
 }
